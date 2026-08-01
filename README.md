@@ -4,6 +4,12 @@ A layered ambient sound mixer, built as an installable PWA for falling asleep to
 Rain on several surfaces, thunder, and theta-range binaural and isochronic tones
 — each independently toggleable with its own volume, all mixing in real time.
 
+**Live demo: <https://sounds.ahcomputing.com>**
+
+Tick a row to start it — browsers require a tap before any audio can play. It
+installs to a home screen and works fully offline afterwards. Use headphones for
+the binaural theta rows; on a speaker only the isochronic one does anything.
+
 No build step, no framework, no npm. Vanilla ES modules and Web Audio.
 
 **Playback never stops on its own.** No sleep timer, no auto-fade, no
