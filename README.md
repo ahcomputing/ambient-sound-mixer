@@ -126,13 +126,31 @@ src/app.js         controller wiring the above
 Nothing crosses those seams: the catalog knows no DOM, the engine knows no
 storage, the view knows neither.
 
+Mixes can be named, saved and reloaded, and a single Play/Stop control at the
+top starts or silences everything at once. Stop stops the *sources* rather than
+ducking a master gain — an oscillator left running silently all night is battery
+for nothing — and leaves the checkboxes alone, so Play restores exactly what was
+on. The lock-screen pause does the same thing, so a pocket-tap silences the mix
+without wiping it.
+
 A few decisions that look like mistakes and are not:
 
 - **The volume slider is linear**, and the master gain is exactly 1.0. Every
   per-row default volume was calibrated against that; a perceptual curve would
   invalidate all of them.
+- **Exactly one volume slider is on screen at a time**, belonging to the row you
+  last selected, and none at all after using Play/Stop or the presets panel.
+  This took three tries — a slider on every row, then on every *enabled* row —
+  and both earlier versions still left enough draggable surface for a scrolling
+  thumb to catch on the way down the page, silently changing the volume of
+  something already playing. A slider gesture must also *start on the thumb*,
+  for the same reason; you give up tapping the bar to jump, deliberately.
+- **A row header is two controls, not one label.** The checkbox is on/off, the
+  rest of the row selects it. They have to be separable or adjusting a playing
+  sound would mean switching it off and on again.
 - **`view.mount()` runs once and nothing afterwards re-renders a row.** A
-  re-render during a slider drag drops the drag.
+  re-render during a slider drag drops the drag. Loading a preset is the single
+  exception, and only because it is a tap on a different control entirely.
 - **The state sanitiser uses `Number.isFinite`, not truthiness.**
   `saved.volume || 60` turns a deliberate 0 into 60 — a muted sound coming back
   at 60% in the dark.

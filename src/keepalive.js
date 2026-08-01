@@ -107,7 +107,13 @@ export function install(newHooks) {
       // leaving them to desync from what is actually playing.
       navigator.mediaSession.setActionHandler('pause', () => hooks.stopAll());
       navigator.mediaSession.setActionHandler('stop', () => hooks.stopAll());
-      navigator.mediaSession.setActionHandler('play', () => { strikes = 0; tryResume(); });
+      /* Must restart the sources, not merely resume the context. Pause stops
+       * them outright — resuming a context with nothing connected to it is
+       * silence, and the notification would sit there claiming to play. */
+      navigator.mediaSession.setActionHandler('play', () => {
+        strikes = 0;
+        hooks.startAll();
+      });
     } catch { /* older Chrome rejects unknown actions */ }
   }
 

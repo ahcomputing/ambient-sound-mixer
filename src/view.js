@@ -7,9 +7,10 @@
  * spurious change event on the way out.
  */
 
-const rows = new Map();      // id -> { el, check, vol, note }
+const rows = new Map();      // id -> { el, check, vol, note, value }
 let resumeBanner = null;
 let resumeCount = null;
+let ui = null;               // the transport/preset elements, looked up once
 
 function fill(input) {
   // WebKit paints the filled part of the track from this custom property.
@@ -20,13 +21,19 @@ function buildRow(sound, saved) {
   const li = document.createElement('li');
   li.className = 'srow';
   li.dataset.id = sound.id;
+  /* Two separate controls, not one label wrapping everything. The checkbox is
+   * on/off; the rest of the header is a button that selects this row as the one
+   * whose volume is showing. They have to be separable, or the only way to
+   * adjust a playing sound would be to switch it off and on again. */
   li.innerHTML = `
-    <label class="srow-head">
-      <input type="checkbox" class="srow-check">
-      <svg class="srow-icon" aria-hidden="true" focusable="false"><use href="#${sound.icon}"></use></svg>
-      <span class="srow-label"></span>
-      <span class="srow-value"></span>
-    </label>
+    <div class="srow-head">
+      <label class="srow-switch"><input type="checkbox" class="srow-check"></label>
+      <button type="button" class="srow-focus" aria-expanded="false">
+        <svg class="srow-icon" aria-hidden="true" focusable="false"><use href="#${sound.icon}"></use></svg>
+        <span class="srow-label"></span>
+        <span class="srow-value"></span>
+      </button>
+    </div>
     ${sound.caption ? '<p class="srow-caption"></p>' : ''}
     <input type="range" class="srow-vol" min="0" max="100" step="1">
     <p class="srow-note" hidden></p>`;
@@ -36,18 +43,54 @@ function buildRow(sound, saved) {
   if (sound.caption) li.querySelector('.srow-caption').textContent = sound.caption;
 
   const check = li.querySelector('.srow-check');
+  const focus = li.querySelector('.srow-focus');
   const vol = li.querySelector('.srow-vol');
   const note = li.querySelector('.srow-note');
+  const value = li.querySelector('.srow-value');
 
   check.checked = saved.enabled;
-  check.setAttribute('aria-label', sound.label);
+  check.setAttribute('aria-label', `${sound.label} on/off`);
+  focus.setAttribute('aria-label', `${sound.label} — show volume`);
   vol.value = saved.volume;
   vol.setAttribute('aria-label', `${sound.label} volume`);
-  li.querySelector('.srow-value').textContent = saved.volume;
+  vol.disabled = true;                 // nothing is focused until something is tapped
+  value.textContent = saved.volume;
   fill(vol);
+  guardTrackTaps(vol);
 
-  rows.set(sound.id, { el: li, check, vol, note });
+  rows.set(sound.id, { el: li, check, focus, vol, note, value });
   return li;
+}
+
+/* Exactly one slider is visible at a time — the row you last selected — and
+ * none at all after touching Play/Stop or Presets.
+ *
+ * This is the third iteration of the same fix. Sliders on every row, then
+ * sliders on every enabled row, both still left enough draggable surface to
+ * catch a thumb while scrolling and silently change the volume of something
+ * that is already playing. One slider, on the row you just deliberately
+ * touched, is the version that holds. */
+export function setFocus(id) {
+  for (const [rowId, row] of rows) {
+    const on = rowId === id;
+    row.el.classList.toggle('srow--open', on);
+    row.vol.disabled = !on;            // also keeps it out of the tab order
+    row.focus.setAttribute('aria-expanded', String(on));
+  }
+}
+
+/* A range input takes its value from wherever the track is touched, so even one
+ * visible slider can be nudged by a scroll that grazes it. Requiring the
+ * gesture to START on the thumb removes that: dragging still works exactly as
+ * before, but brushing the bar does nothing. */
+function guardTrackTaps(vol) {
+  vol.addEventListener('pointerdown', (e) => {
+    const box = vol.getBoundingClientRect();
+    const thumb = 24;                                     // matches the CSS
+    const travel = box.width - thumb;
+    const centre = box.left + thumb / 2 + (vol.value / 100) * travel;
+    if (Math.abs(e.clientX - centre) > thumb) e.preventDefault();
+  });
 }
 
 export function mount(root, catalog, state, handlers) {
@@ -116,10 +159,135 @@ export function mount(root, catalog, state, handlers) {
     handlers.onVolume(row.dataset.id, Number(e.target.value));
   });
 
+  root.addEventListener('click', (e) => {
+    // The checkbox's own click bubbles here too; only the focus button counts.
+    const btn = e.target.closest?.('.srow-focus');
+    if (!btn) return;
+    handlers.onFocusRow(btn.closest('.srow').dataset.id);
+  });
+
   resumeBanner = document.getElementById('resume-banner');
   resumeCount = document.getElementById('resume-count');
   document.getElementById('resume-button')
     ?.addEventListener('click', () => handlers.onResume());
+
+  ui = {
+    master: document.getElementById('master-toggle'),
+    masterLabel: document.getElementById('master-label'),
+    presetName: document.getElementById('preset-name'),
+    presetState: document.getElementById('preset-state'),
+    presetToggle: document.getElementById('preset-toggle'),
+    panel: document.getElementById('preset-panel'),
+    list: document.getElementById('preset-list'),
+    form: document.getElementById('preset-form'),
+    input: document.getElementById('preset-input'),
+  };
+
+  ui.master.addEventListener('click', () => handlers.onMasterToggle());
+
+  ui.presetToggle.addEventListener('click', () => {
+    handlers.onClearFocus();          // presets are not a sound; hide the slider
+    const open = ui.panel.hidden;
+    ui.panel.hidden = !open;
+    ui.presetToggle.setAttribute('aria-expanded', String(open));
+    if (open) ui.input.focus();
+  });
+
+  ui.form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = ui.input.value.trim();
+    if (!name) return;
+    handlers.onSavePreset(name);
+    ui.input.value = '';
+    ui.input.blur();          // dismiss the phone keyboard
+  });
+
+  // Delegated, because the list is the one part of the UI that is re-rendered.
+  ui.list.addEventListener('click', (e) => {
+    const item = e.target.closest('.preset-item');
+    if (!item) return;
+    handlers.onClearFocus();
+    if (e.target.closest('.preset-delete')) {
+      /* Two taps to delete, with the button latching in between. A confirm()
+       * dialog in a standalone PWA is jarring, and an undo would need history
+       * this app has no other use for. */
+      const btn = e.target.closest('.preset-delete');
+      if (btn.getAttribute('aria-pressed') === 'true') {
+        handlers.onDeletePreset(item.dataset.id);
+      } else {
+        ui.list.querySelectorAll('.preset-delete[aria-pressed="true"]')
+          .forEach((b) => { b.setAttribute('aria-pressed', 'false'); b.textContent = '×'; });
+        btn.setAttribute('aria-pressed', 'true');
+        btn.textContent = 'Delete?';
+      }
+      return;
+    }
+    if (e.target.closest('.preset-load')) handlers.onLoadPreset(item.dataset.id);
+  });
+}
+
+/* Bulk row update, for loading a preset.
+ *
+ * This is the one place that writes input.value after mount, which mount()'s
+ * header warns against. It is safe here and only here: a preset load is an
+ * explicit tap on a different control, so no slider can be mid-drag. It is
+ * still not a re-render — the elements are the same ones, only their values
+ * change. */
+export function applyMix(mix) {
+  for (const [id, row] of rows) {
+    const entry = mix[id];
+    if (!entry) continue;
+    if (!row.check.disabled) row.check.checked = entry.enabled;
+    row.vol.value = entry.volume;
+    row.value.textContent = entry.volume;
+    fill(row.vol);
+  }
+  // Loading a preset is not selecting a sound, so nothing is left showing.
+  setFocus(null);
+}
+
+/* mode: 'playing' | 'ready' | 'empty' */
+export function setMaster(mode) {
+  if (!ui) return;
+  ui.master.setAttribute('aria-pressed', String(mode === 'playing'));
+  ui.master.disabled = mode === 'empty';
+  ui.masterLabel.textContent = mode === 'playing' ? 'Stop' : 'Play';
+}
+
+export function setNowPlaying(name, detail) {
+  if (!ui) return;
+  ui.presetName.textContent = name;
+  ui.presetState.textContent = detail;
+}
+
+export function renderPresets(presets, activeId) {
+  if (!ui) return;
+  ui.list.textContent = '';
+  for (const preset of presets) {
+    const li = document.createElement('li');
+    li.className = 'preset-item';
+    li.dataset.id = preset.id;
+
+    const load = document.createElement('button');
+    load.type = 'button';
+    load.className = 'preset-load';
+    load.textContent = preset.name;
+    if (preset.id === activeId) load.setAttribute('aria-current', 'true');
+    const count = document.createElement('span');
+    count.className = 'preset-count';
+    count.textContent = preset.count === 1 ? '1 sound' : `${preset.count} sounds`;
+    load.appendChild(count);
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'preset-delete';
+    del.setAttribute('aria-pressed', 'false');
+    del.setAttribute('aria-label', `Delete ${preset.name}`);
+    del.textContent = '×';
+
+    li.append(load, del);
+    ui.list.appendChild(li);
+  }
 }
 
 export function setPlaying(id, on) {
@@ -145,6 +313,8 @@ export function setMissing(id, message) {
   row.el.classList.remove('srow--pending', 'srow--playing');
   row.check.checked = false;
   row.check.disabled = true;
+  row.focus.disabled = true;
+  row.el.classList.remove('srow--open');
   row.vol.disabled = true;
   setNote(id, message);
 }

@@ -142,14 +142,30 @@ body {
   background: var(--color-surface);
   border: 1px solid var(--color-border); border-radius: var(--radius);
 }
-.srow-head {
-  display: flex; align-items: center; gap: 0.6rem;
-  min-height: var(--tap); cursor: pointer;
+.srow-head { display: flex; align-items: center; gap: 0.2rem; }
+/* The checkbox draws at 22px but must be HIT at 44. Splitting the header into
+   two controls cost the old whole-row label, and a bare 22px checkbox is a
+   miserable target in the dark. The negative margin keeps the visual alignment
+   where it was. */
+.srow-switch {
+  display: flex; align-items: center; justify-content: center;
+  width: var(--tap); height: var(--tap); flex: none;
+  margin-left: -0.7rem; cursor: pointer;
 }
 .srow-check {
-  width: 22px; height: 22px; flex: none; margin: 0;
+  width: 22px; height: 22px; margin: 0;
   accent-color: var(--color-accent-green);
+  cursor: pointer;
 }
+/* The row body is a button, not part of the checkbox's label: tapping it picks
+   this row as the one showing its volume, without toggling playback. */
+.srow-focus {
+  flex: 1; display: flex; align-items: center; gap: 0.6rem;
+  min-height: var(--tap); padding: 0; min-width: 0;
+  background: transparent; border: 0; color: inherit;
+  font: inherit; text-align: left; cursor: pointer;
+}
+.srow-focus:disabled { cursor: default; }
 .srow-icon { width: 20px; height: 20px; flex: none; color: var(--color-text-dim); }
 .srow-label { flex: 1; }
 .srow-value {
@@ -166,6 +182,18 @@ body {
 .srow--busy .srow-icon { opacity: 0.4; }
 .srow--missing { border-color: var(--color-danger); }
 .srow--missing .srow-head, .srow--missing .srow-vol { opacity: 0.45; }
+
+/* Exactly ONE slider is on screen at a time — the row last selected — and none
+   at all after touching Play/Stop or Presets. Anything looser leaves draggable
+   surface that a scrolling thumb finds on its way down the page, silently
+   changing the volume of something already playing.
+
+   display:none rather than visibility/opacity so it leaves the layout entirely,
+   and the input is also `disabled` from JS so it cannot be reached by tab. */
+.srow:not(.srow--open) .srow-vol { display: none; }
+.srow--open { padding-bottom: 0.6rem; }
+/* The selected row is visibly the one being adjusted. */
+.srow--open .srow-label { color: var(--color-accent-blue); }
 
 /* Range input. WebKit and Moz pseudo-elements CANNOT share a selector list —
    one unrecognised pseudo invalidates the whole rule — so these stay split. */
@@ -215,6 +243,66 @@ body {
 @media (min-width: 34rem) {
   .stack-bottom { left: auto; right: 1rem; width: min(26rem, calc(100vw - 2rem)); }
 }
+
+/* ── transport + presets ─────────────────────────────────────────────── */
+.transport-wrap { padding-bottom: 0; }
+.transport {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem var(--gap);
+  padding: 0.6rem 0.85rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+}
+/* Deliberately the largest target on the page: it is the one control reached
+   for in the dark, half asleep, so it takes all the width the row has left. */
+.btn-master { flex: 1; font-size: 1rem; }
+.btn-master[aria-pressed="true"] {
+  background: var(--color-accent-green);
+}
+/* Its own full-width line rather than squeezed between the two buttons, which
+   left it 99px on a 375px phone — not enough to read a mix name at a glance,
+   and reading it is the entire reason presets are named. */
+.transport-now {
+  order: 3; flex-basis: 100%; min-width: 0; line-height: 1.3;
+}
+.preset-name {
+  display: block; font-size: 0.95rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.preset-state {
+  display: block; font-family: var(--font-data);
+  font-size: 0.72rem; color: var(--color-text-dim);
+}
+
+.preset-panel {
+  margin-top: 0.5rem; padding: 0.6rem 0.85rem 0.8rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+}
+.preset-panel[hidden] { display: none; }
+.preset-list { list-style: none; margin: 0 0 0.6rem; padding: 0; }
+.preset-list:empty { display: none; }
+.preset-item { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.35rem; }
+.preset-load {
+  flex: 1; min-height: var(--tap); padding: 0 0.85rem;
+  text-align: left; border-radius: var(--radius);
+  border: 1px solid var(--color-border); background: transparent;
+  color: var(--color-text); font-family: var(--font-prose); font-size: 0.95rem;
+  cursor: pointer;
+}
+.preset-load:hover { background: var(--color-bg); }
+.preset-load[aria-current="true"] { border-color: var(--color-accent-green); }
+.preset-count { color: var(--color-text-dim); font-size: 0.8rem; margin-left: 0.4rem; }
+.preset-delete {
+  min-height: var(--tap); min-width: var(--tap);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  background: transparent; color: var(--color-danger);
+  font-size: 1.2rem; line-height: 1; cursor: pointer;
+}
+.preset-delete[aria-pressed="true"] {
+  background: var(--color-danger); color: #150409; border-color: var(--color-danger);
+}
+.preset-form { display: flex; gap: 0.5rem; }
+.preset-hint { margin: 0.5rem 0 0; font-size: 0.78rem; }
 
 /* ── credits ─────────────────────────────────────────────────────────── */
 .credit-line {

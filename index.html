@@ -71,6 +71,30 @@ window.addEventListener('beforeinstallprompt', (e) => {
   </symbol>
 </svg>
 
+<div class="wrap transport-wrap">
+  <div class="transport">
+    <button id="master-toggle" class="btn btn-master" type="button" aria-pressed="false">
+      <span id="master-label">Play</span>
+    </button>
+    <div class="transport-now">
+      <span id="preset-name" class="preset-name">No mix</span>
+      <span id="preset-state" class="preset-state"></span>
+    </div>
+    <button id="preset-toggle" class="btn btn-ghost" type="button"
+            aria-expanded="false" aria-controls="preset-panel">Presets</button>
+  </div>
+
+  <div id="preset-panel" class="preset-panel" hidden>
+    <ul id="preset-list" class="preset-list"></ul>
+    <form id="preset-form" class="preset-form">
+      <input id="preset-input" class="input" type="text" maxlength="40"
+             placeholder="Name this mix" autocomplete="off" enterkeyhint="done">
+      <button class="btn" type="submit">Save</button>
+    </form>
+    <p id="preset-hint" class="muted preset-hint">Saving with an existing name replaces it.</p>
+  </div>
+</div>
+
 <main class="wrap mixer" id="mixer"></main>
 
 <!-- All three of these are fixed to the bottom. Stacked rather than layered,

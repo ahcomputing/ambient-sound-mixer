@@ -26,6 +26,12 @@ let catalog = null;
  * checkbox shows the saved intent; this set is what the resume banner acts on. */
 const pending = new Set();
 
+/* The one row whose volume slider is showing, or null. Only ever set by tapping
+ * a sound; every other control clears it, so a stray scroll near Play/Stop or
+ * the preset list can never land on a slider. */
+let focusedId = null;
+
+
 function labelsFor(ids) {
   return ids.map((id) => catalog.sounds.get(id)?.label ?? id);
 }
@@ -67,6 +73,23 @@ async function startRow(id) {
   }
 }
 
+function setFocus(id) {
+  focusedId = id;
+  view.setFocus(id);
+}
+
+/* Tapping a row's body selects it as the one showing its volume. On a row that
+ * is off, it switches it on as well — otherwise the gesture would reveal a
+ * slider for something silent, and spec §1 says volume is only meaningful on a
+ * sound that is playing. */
+async function onFocusRow(id) {
+  const sound = catalog.sounds.get(id);
+  if (!sound || sound.missing) return;
+  if (state.get(id)?.enabled) { setFocus(id); return; }
+  view.setChecked(id, true);
+  await onToggle(id, true);
+}
+
 async function onToggle(id, checked) {
   pending.delete(id);
   // Clear the dashed border unconditionally: touching a restored row resolves
@@ -75,28 +98,104 @@ async function onToggle(id, checked) {
   view.setPending(id, false);
   refreshResumeBanner();
   state.setEnabled(id, checked);
+  setFocus(checked ? id : (focusedId === id ? null : focusedId));
 
   if (!checked) {
     engine.stop(id);
     view.setPlaying(id, false);
-    return;
+  } else {
+    view.setPlaying(id, await startRow(id));
   }
-  view.setPlaying(id, await startRow(id));
+  refreshTransport();
 }
 
 function onVolume(id, value) {
   state.setVolume(id, value);
   engine.setVolume(id, value);          // no-op when the row is not playing
+  refreshTransport();                   // may have made the active preset dirty
+}
+
+/* Starts every enabled row that is not missing. Shared by the resume banner,
+ * the master button and preset loading — allSettled throughout, because one bad
+ * file must never block the rest of the mix. */
+async function startEnabled() {
+  const ids = state.enabledIds().filter((id) => !catalog.sounds.get(id)?.missing);
+  pending.clear();
+  ids.forEach((id) => view.setPending(id, false));
+  refreshResumeBanner();
+  const results = await Promise.allSettled(ids.map(startRow));
+  results.forEach((r, i) => view.setPlaying(ids[i], r.value === true));
+  refreshTransport();
 }
 
 async function onResume() {
-  const ids = [...pending];
+  setFocus(null);
+  await startEnabled();
+}
+
+/* One control for "make it all stop" and "start it again". Stops the sources
+ * rather than ducking the master gain: an oscillator left running silently all
+ * night is battery for nothing. The checkboxes stay checked, so Play restores
+ * exactly what was on. */
+async function onMasterToggle() {
+  setFocus(null);
+  if (engine.activeIds().length) {
+    for (const id of engine.activeIds()) {
+      engine.stop(id);
+      view.setPlaying(id, false);
+    }
+    refreshTransport();
+    return;
+  }
+  await startEnabled();
+}
+
+async function onLoadPreset(id) {
+  const mix = state.loadPreset(id);
+  if (!mix) return;
+
+  for (const active of engine.activeIds()) {
+    engine.stop(active);
+    view.setPlaying(active, false);
+  }
   pending.clear();
-  ids.forEach((id) => view.setPending(id, false));   // resolved, whatever happens next
+  for (const rowId of catalog.sounds.keys()) view.setPending(rowId, false);
+  view.applyMix(mix);                   // also clears the focused row
+  focusedId = null;
   refreshResumeBanner();
-  // allSettled: one bad file must not block the rest of the mix.
-  const results = await Promise.allSettled(ids.map(startRow));
-  results.forEach((r, i) => view.setPlaying(ids[i], r.value === true));
+  await startEnabled();
+}
+
+function onSavePreset(name) {
+  setFocus(null);
+  state.savePreset(name);
+  refreshTransport();
+}
+
+function onDeletePreset(id) {
+  setFocus(null);
+  state.deletePreset(id);
+  refreshTransport();
+}
+
+/* Keeps the master button and the "what am I playing" line honest. */
+function refreshTransport() {
+  const playing = engine.activeIds().length > 0;
+  const selected = state.enabledIds().length;
+  view.setMaster(playing ? 'playing' : (selected ? 'ready' : 'empty'));
+
+  const active = state.activePreset();
+  const dirty = state.isDirty();
+  view.setNowPlaying(
+    active ? active.name : (selected ? 'Custom mix' : 'Nothing selected'),
+    [
+      selected ? `${selected} sound${selected === 1 ? '' : 's'}` : '',
+      playing ? 'playing' : (selected ? 'stopped' : ''),
+      active && dirty ? 'edited' : '',
+    ].filter(Boolean).join(' · '),
+  );
+
+  view.renderPresets(state.listPresets(), active?.id ?? null);
 }
 
 async function main() {
@@ -107,7 +206,11 @@ async function main() {
 
   catalog = await loadCatalog();
   const mix = state.load(catalog.sounds);
-  view.mount(root, catalog, mix, { onToggle, onVolume, onResume });
+  view.mount(root, catalog, mix, {
+    onToggle, onVolume, onResume, onFocusRow,
+    onClearFocus: () => setFocus(null),
+    onMasterToggle, onLoadPreset, onSavePreset, onDeletePreset,
+  });
 
   /* Restore positions but start nothing — the autoplay policy needs a tap
    * regardless, so a returning user gets their exact mix back in one press
@@ -119,18 +222,22 @@ async function main() {
     }
   }
   refreshResumeBanner();
+  refreshTransport();
 
   keepalive.install({
     resume: engine.resume,
     activeIds: engine.activeIds,
+    /* The lock-screen pause. Leaves the checkboxes alone so the mix survives —
+     * a pocket-tap must not wipe what was selected, only silence it. That makes
+     * it identical to the master Stop button, which is the point. */
     stopAll: () => {
       for (const id of engine.activeIds()) {
         engine.stop(id);
         view.setPlaying(id, false);
-        view.setChecked(id, false);
-        state.setEnabled(id, false);
       }
+      refreshTransport();
     },
+    startAll: () => { startEnabled(); },
     onGiveUp: () => {
       const id = engine.activeIds()[0];
       if (id) view.setNote(id, 'audio was interrupted — uncheck and check again to resume');
