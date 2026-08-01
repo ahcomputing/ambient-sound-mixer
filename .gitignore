@@ -1,0 +1,40 @@
+# This repository is PUBLIC. Everything below is deliberately withheld because
+# it describes private infrastructure, not because it is unimportant.
+#
+# Before adding an exception here, check what the file actually contains: the
+# deploy tooling carries LAN addresses, host names and the layout of a private
+# network, and the project notes record known-weak configuration on machines
+# that are not this one.
+
+# Deployment: nginx site templates and k8s manifests, full of internal hosts.
+deploy/
+
+# Site-specific tooling. scripts/build.sh IS public — it is the whole build and
+# has no infrastructure in it. These two do:
+scripts/init.sh
+scripts/deploy.sh
+
+# Working notes and the original spec: both reference internal hosts and other
+# apps on the same fleet.
+CLAUDE.md
+sounds_spec.md
+
+# Manual test checklists — these are mostly ssh commands with real addresses.
+tests/
+
+# Local editor/agent config.
+.claude/
+
+# Build output.
+dist/
+
+# Raw material. Only the two generated screenshots belong in screenshots/,
+# and the 1024px icon source is derived from scripts/icon-source.svg.
+screenshots/*
+!screenshots/narrow.png
+!screenshots/wide.png
+icons/icon-source-1024.png
+
+__pycache__/
+*.pyc
+.DS_Store

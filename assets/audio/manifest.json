@@ -1,0 +1,86 @@
+{
+  "rain-field": {
+    "bytes": 522669,
+    "defaultVolume": 71,
+    "duration": 26.0,
+    "file": "rain-field.mp3",
+    "loopEnd": 25.0,
+    "loopStart": 1.0,
+    "lufs": -26.0,
+    "source": "synthesised"
+  },
+  "rain-metal-roof": {
+    "bytes": 483261,
+    "defaultVolume": 30,
+    "duration": 26.0,
+    "file": "rain-metal-roof.mp3",
+    "loopEnd": 25.0,
+    "loopStart": 1.0,
+    "lufs": -26.0,
+    "source": "synthesised"
+  },
+  "rain-shingle-roof": {
+    "bytes": 542445,
+    "defaultVolume": 37,
+    "duration": 26.0,
+    "file": "rain-shingle-roof.mp3",
+    "loopEnd": 25.0,
+    "loopStart": 1.0,
+    "lufs": -26.0,
+    "source": "synthesised"
+  },
+  "rain-tin-roof": {
+    "bytes": 498621,
+    "defaultVolume": 22,
+    "duration": 26.0,
+    "file": "rain-tin-roof.mp3",
+    "loopEnd": 25.0,
+    "loopStart": 1.0,
+    "lufs": -26.0,
+    "source": "synthesised"
+  },
+  "rain-true": {
+    "bytes": 501837,
+    "credit": "Falling Rain SFX 1 \u2014 valvalion",
+    "defaultVolume": 60,
+    "duration": 26.0,
+    "file": "rain-true.mp3",
+    "license": "CC BY 3.0",
+    "loopEnd": 25.0,
+    "loopStart": 1.0,
+    "lufs": -26.0,
+    "source": "recording",
+    "sourceStart": 4243.0,
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Falling_Rain_SFX_1_2016-11-19.oga"
+  },
+  "rain-window": {
+    "bytes": 618693,
+    "defaultVolume": 33,
+    "duration": 26.0,
+    "file": "rain-window.mp3",
+    "loopEnd": 25.0,
+    "loopStart": 1.0,
+    "lufs": -26.0,
+    "source": "synthesised"
+  },
+  "thunder-close": {
+    "bytes": 677997,
+    "defaultVolume": 45,
+    "duration": 42.0,
+    "file": "thunder-close.mp3",
+    "loopEnd": 41.0,
+    "loopStart": 1.0,
+    "lufs": -26.0,
+    "source": "synthesised"
+  },
+  "thunder-distant": {
+    "bytes": 652605,
+    "defaultVolume": 81,
+    "duration": 42.0,
+    "file": "thunder-distant.mp3",
+    "loopEnd": 41.0,
+    "loopStart": 1.0,
+    "lufs": -26.0,
+    "source": "synthesised"
+  }
+}

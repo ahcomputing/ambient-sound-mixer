@@ -1,0 +1,277 @@
+<!doctype html>
+<!-- audition.html — dev-only listening rig for the mixer's sounds.
+     Lives in scripts/ because deploy.sh excludes that directory from the
+     webroot; this must never ship. Serve the repo root and open
+     http://localhost:8123/scripts/audition.html
+
+     "Seam" is the button that matters for the file rows: it loops a 4-second
+     window straddling the loop junction, so a click you would otherwise meet
+     once every 24 seconds arrives every 4. If Seam and Loop sound the same,
+     the file is good.
+
+     Theta has no file and no seam. It is two oscillators, generated live,
+     exactly as the app will do it. -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audition — mixer sounds</title>
+<style>
+  :root {
+    --bg: #0b1020; --surface: #131c33; --border: #24314f;
+    --blue: #4d8dff; --green: #2fe6a0; --text: #eef2f8; --dim: #97a3b8;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 1.5rem; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, sans-serif; }
+  h1 { font-size: 1.1rem; margin: 0 0 .25rem; }
+  h2 { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em;
+       color: var(--dim); margin: 1.4rem 0 .5rem; font-weight: 600; }
+  p.note { color: var(--dim); font-size: .85rem; margin: 0 0 1rem; max-width: 50rem; }
+  .row { display: grid; grid-template-columns: 10rem 5rem 5rem 1fr 7.5rem;
+         gap: .6rem; align-items: center; padding: .5rem .7rem; margin-bottom: .35rem;
+         background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+  .id { font-family: var(--mono); font-size: .8rem; }
+  .id small { display: block; color: var(--dim); font-size: .68rem; font-family: system-ui, sans-serif; }
+  button { font: inherit; font-size: .82rem; padding: .4rem .5rem; border-radius: 7px;
+           border: 1px solid var(--border); background: #1b2645; color: var(--text);
+           cursor: pointer; min-height: 38px; }
+  button:hover:not(:disabled) { border-color: var(--blue); }
+  button:disabled { opacity: .3; cursor: default; }
+  button[aria-pressed="true"] { background: var(--blue); border-color: var(--blue);
+                                color: #04122e; font-weight: 600; }
+  button[aria-pressed="true"].seam { background: var(--green); border-color: var(--green); }
+  input[type=range] { width: 100%; accent-color: var(--blue); }
+  .meta { font-family: var(--mono); font-size: .7rem; color: var(--dim); text-align: right; }
+  .bar { display: flex; gap: .5rem; margin: 1rem 0 .5rem; flex-wrap: wrap; }
+  #status { font-family: var(--mono); font-size: .78rem; color: var(--dim); min-height: 1.4em; }
+  #credits { color: var(--dim); font-size: .74rem; margin-top: 1.5rem; }
+</style>
+
+<h1>Mixer sound audition</h1>
+<p class="note">
+  Sliders start at each sound's <strong>default volume</strong> — derived from your
+  own audition mix, converted to loudness terms. Every file is mastered to
+  &minus;26&nbsp;LUFS, so equal slider positions now mean equal perceived
+  loudness. Headphones, especially for theta.
+</p>
+
+<div class="bar">
+  <button id="stopAll">Stop everything</button>
+  <button id="allRain">Toggle all rain (mix check)</button>
+  <button id="bedtime">Bedtime mix (true rain + distant thunder + theta)</button>
+</div>
+<div id="status">click any button to start audio</div>
+<div id="rows"></div>
+<div id="credits"></div>
+
+<script type="module">
+const AUDIO_BASE = '../assets/audio/';
+const status = document.getElementById('status');
+// Must mirror src/catalog.js — this rig is the A/B reference for the app, and a
+// rig that has drifted is worse than no rig.
+const THETA_BEAT = 6;
+const THETA_VARIANTS = {
+  'theta-200':     { mode: 'binaural',   carrier: 200, gain: 0.0562 },
+  'theta-400':     { mode: 'binaural',   carrier: 400, gain: 0.0545 },
+  'theta-528':     { mode: 'binaural',   carrier: 528, gain: 0.0539 },
+  'theta-700':     { mode: 'binaural',   carrier: 700, gain: 0.0533 },
+  'theta-iso-528': { mode: 'isochronic', carrier: 528, gain: 0.0884 },
+};
+
+let ctx = null;
+const buffers = new Map();
+const voices = new Map();
+
+function audioCtx() {
+  // Same lazy-on-gesture rule the real app has to follow.
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (ctx.state === 'suspended') ctx.resume();
+  return ctx;
+}
+
+async function buffer(id, entry) {
+  if (buffers.has(id)) return buffers.get(id);
+  status.textContent = `decoding ${id}…`;
+  const bytes = await (await fetch(AUDIO_BASE + entry.file)).arrayBuffer();
+  const buf = await audioCtx().decodeAudioData(bytes);
+  buffers.set(id, buf);
+  status.textContent = `decoded ${id} — ${buf.duration.toFixed(2)}s @ ${buf.sampleRate}Hz`;
+  return buf;
+}
+
+/* Built by hand rather than by seeking, so the junction comes round every 4s:
+   the last 2s of the loop region followed by the first 2s. Looping that
+   reproduces exactly the transition the app will make. */
+function seamBuffer(buf, entry) {
+  const sr = buf.sampleRate, half = Math.floor(2 * sr);
+  const a = Math.floor(entry.loopStart * sr), b = Math.floor(entry.loopEnd * sr);
+  const out = audioCtx().createBuffer(buf.numberOfChannels, half * 2, sr);
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const src = buf.getChannelData(c), dst = out.getChannelData(c);
+    dst.set(src.subarray(b - half, b), 0);
+    dst.set(src.subarray(a, a + half), half);
+  }
+  return out;
+}
+
+function stop(id) {
+  const v = voices.get(id);
+  if (!v) return;
+  const now = audioCtx().currentTime;
+  v.gain.gain.cancelScheduledValues(now);
+  v.gain.gain.setValueAtTime(v.gain.gain.value, now);
+  v.gain.gain.linearRampToValueAtTime(0.0001, now + 0.3);
+  v.stop(now + 0.35);
+  voices.delete(id);
+}
+
+/* Theta: no file, no seam, nothing to decode. Two oscillators hard-panned by a
+   ChannelMerger so each tone reaches one ear only — that separation is the
+   whole mechanism, and it is also why this must not be an MP3: joint-stereo
+   coding folds the channels together and smears exactly what matters. */
+function playTheta(entry, volume) {
+  const c = audioCtx();
+  // Source trim: a raw oscillator is ~25dB hotter than the mastered files, and
+  // the values differ per carrier because K-weighting is frequency-dependent.
+  const trim = c.createGain();
+  trim.gain.value = entry.gain;
+  const gain = c.createGain();
+  gain.gain.value = volume;
+  trim.connect(gain).connect(c.destination);
+
+  const osc = [];
+  if (entry.mode === 'isochronic') {
+    // One tone, amplitude-modulated, same in both ears — survives the acoustic
+    // mixing that destroys a binaural beat on a speaker.
+    const carrier = c.createOscillator(); carrier.frequency.value = entry.carrier;
+    const mod = c.createGain(); mod.gain.value = 0.5;
+    const lfo = c.createOscillator(); lfo.frequency.value = THETA_BEAT;
+    const depth = c.createGain(); depth.gain.value = 0.5;
+    lfo.connect(depth).connect(mod.gain);
+    carrier.connect(mod).connect(trim);
+    osc.push(carrier, lfo);
+  } else {
+    const merger = c.createChannelMerger(2);
+    [entry.carrier, entry.carrier + THETA_BEAT].forEach((hz, i) => {
+      const o = c.createOscillator();
+      o.frequency.value = hz;
+      o.connect(merger, 0, i);
+      osc.push(o);
+    });
+    merger.connect(trim);
+  }
+  osc.forEach(o => o.start());
+  return { gain, stop: (t) => osc.forEach(o => o.stop(t)) };
+}
+
+async function play(id, entry, mode, volume) {
+  stop(id);
+  if (entry.generator) { voices.set(id, playTheta(entry, volume)); return; }
+
+  const c = audioCtx();
+  const buf = await buffer(id, entry);
+  const src = c.createBufferSource();
+  src.buffer = mode === 'seam' ? seamBuffer(buf, entry) : buf;
+  src.loop = true;
+  if (mode === 'loop') { src.loopStart = entry.loopStart; src.loopEnd = entry.loopEnd; }
+  const gain = c.createGain();
+  gain.gain.value = volume;
+  src.connect(gain).connect(c.destination);
+  src.start(0, mode === 'loop' ? entry.loopStart : 0);
+  voices.set(id, { gain, stop: (t) => src.stop(t) });
+}
+
+const manifest = await (await fetch(AUDIO_BASE + 'manifest.json')).json();
+const rowsEl = document.getElementById('rows');
+
+const GROUPS = [
+  ['Rain', id => id.startsWith('rain-')],
+  ['Thunder', id => id.startsWith('thunder-')],
+  ['Theta', id => id.startsWith('theta-')],
+];
+const catalog = { ...manifest };
+for (const [id, v] of Object.entries(THETA_VARIANTS)) {
+  catalog[id] = { generator: true, defaultVolume: 60, ...v };
+}
+
+for (const [title, match] of GROUPS) {
+  const ids = Object.keys(catalog).filter(match).sort();
+  if (!ids.length) continue;
+  const h = document.createElement('h2');
+  h.textContent = title;
+  rowsEl.appendChild(h);
+
+  for (const id of ids) {
+    const entry = catalog[id];
+    const gen = !!entry.generator;
+    const el = document.createElement('div');
+    el.className = 'row';
+    el.dataset.id = id;
+    el.innerHTML = `
+      <span class="id">${id}${gen ? '<small>best with headphones</small>'
+                                  : (entry.source === 'recording' ? '<small>real recording</small>' : '')}</span>
+      <button class="loop" aria-pressed="false">Play</button>
+      <button class="seam" aria-pressed="false" ${gen ? 'disabled' : ''}>Seam</button>
+      <input type="range" min="0" max="100" value="${entry.defaultVolume ?? 60}">
+      <span class="meta">${gen ? (entry.mode === 'isochronic'
+                                  ? `${entry.carrier}Hz \u00d7${THETA_BEAT}`
+                                  : `${entry.carrier}/${entry.carrier + THETA_BEAT}Hz`)
+                                : `${entry.lufs} LUFS · ${(entry.bytes / 1024).toFixed(0)}K`}</span>`;
+    rowsEl.appendChild(el);
+
+    const vol = el.querySelector('input');
+    const btns = { loop: el.querySelector('.loop'), seam: el.querySelector('.seam') };
+    for (const [mode, btn] of Object.entries(btns)) {
+      btn.addEventListener('click', async () => {
+        const on = btn.getAttribute('aria-pressed') === 'true';
+        Object.values(btns).forEach(b => b.setAttribute('aria-pressed', 'false'));
+        if (on) { stop(id); return; }
+        btn.setAttribute('aria-pressed', 'true');
+        await play(id, entry, mode, vol.value / 100);
+      });
+    }
+    // Live gain, no restart — the behaviour the real slider needs.
+    vol.addEventListener('input', () => {
+      const v = voices.get(id);
+      if (v) v.gain.gain.setTargetAtTime(vol.value / 100, audioCtx().currentTime, 0.02);
+    });
+  }
+}
+
+function rowFor(id) { return rowsEl.querySelector(`[data-id="${id}"]`); }
+
+async function setPlaying(ids) {
+  [...voices.keys()].forEach(stop);
+  rowsEl.querySelectorAll('[aria-pressed]').forEach(b => b.setAttribute('aria-pressed', 'false'));
+  for (const id of ids) {
+    const row = rowFor(id);
+    row.querySelector('.loop').setAttribute('aria-pressed', 'true');
+    await play(id, catalog[id], 'loop', row.querySelector('input').value / 100);
+  }
+}
+
+document.getElementById('stopAll').addEventListener('click', async () => {
+  await setPlaying([]);
+  status.textContent = 'stopped';
+});
+
+document.getElementById('allRain').addEventListener('click', async () => {
+  const ids = Object.keys(catalog).filter(i => i.startsWith('rain-')).sort();
+  const anyOn = ids.some(i => voices.has(i));
+  await setPlaying(anyOn ? [] : ids);
+  status.textContent = anyOn ? 'stopped' : 'all rain playing — listen for clipping on the sum';
+});
+
+document.getElementById('bedtime').addEventListener('click', async () => {
+  await setPlaying(['rain-true', 'thunder-distant', 'theta-528']);
+  status.textContent = 'bedtime mix';
+});
+
+// CC BY requires the credit to travel with the audio, so it lives in the
+// manifest and gets rendered — not in a README that deploy.sh strips.
+const credited = Object.entries(manifest).filter(([, e]) => e.credit);
+document.getElementById('credits').innerHTML = credited.length
+  ? 'Credits: ' + credited.map(([id, e]) =>
+      `${id} — <a href="${e.sourceUrl}" style="color:var(--blue)">${e.credit}</a> (${e.license})`).join(' · ')
+  : '';
+</script>

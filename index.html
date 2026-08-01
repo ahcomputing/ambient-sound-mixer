@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+
+<!-- viewport-fit=cover puts content under the notch and home indicator, which is
+     why app.css must use the safe-area insets. Zoom is deliberately NOT disabled:
+     a game can opt out, a text-bearing tool must not. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Layered rain, thunder and theta-wave mixer for sleep.">
+<meta name="theme-color" content="#2f7bf7">
+
+<!-- iOS ignores the manifest's icons array entirely for the home-screen icon. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sounds">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+
+<link rel="icon" href="./icons/favicon.ico" sizes="any">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="stylesheet" href="./styles/tokens.css">
+<link rel="stylesheet" href="./styles/app.css">
+
+<title>Ambient Sound Mixer</title>
+
+<!-- Must run before any module. `beforeinstallprompt` can fire before a deferred
+     module executes and it does NOT replay, so a listener registered only inside
+     install-prompt.js misses it and the custom Install button never appears. -->
+<script>
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  window.__deferredPrompt = e;
+});
+</script>
+</head>
+<body>
+
+<header class="app-bar">
+  <h1 class="app-title">Ambient Sound Mixer</h1>
+  <button id="install-button" class="btn btn-ghost" hidden>Install</button>
+</header>
+
+<!-- Row icons as an inline sprite: five glyphs that would otherwise be five
+     requests and five more precache entries. `currentColor` lets them pick up
+     the playing/idle colour from the row. -->
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="ic-rain" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round">
+    <path d="M6 9a4 4 0 0 1 1-7.7A5 5 0 0 1 17 3a3.5 3.5 0 0 1 .5 6.9"/>
+    <path d="M8 15l-1 3M12.5 15l-1 3M17 15l-1 3"/>
+  </symbol>
+  <symbol id="ic-roof" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M2 12L12 4l10 8"/>
+    <path d="M7 17l-1 3M12 17l-1 3M17 17l-1 3"/>
+  </symbol>
+  <symbol id="ic-window" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="4" y="3" width="16" height="18" rx="2"/>
+    <path d="M12 3v18M4 12h16"/>
+  </symbol>
+  <symbol id="ic-thunder" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 11a4 4 0 0 1 1-7.7A5 5 0 0 1 17 5a3.5 3.5 0 0 1 .5 6.9"/>
+    <path d="M13 13l-3 4h4l-3 4"/>
+  </symbol>
+  <symbol id="ic-wave" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round">
+    <path d="M2 12c2 0 2-6 4-6s2 12 4 12 2-12 4-12 2 12 4 12 2-6 4-6"/>
+  </symbol>
+</svg>
+
+<main class="wrap mixer" id="mixer"></main>
+
+<!-- All three of these are fixed to the bottom. Stacked rather than layered,
+     because they were previously sitting exactly on top of one another.
+     sw-update.js and install-prompt.js find their elements by id, so nesting
+     them changes nothing for either. Resume is last — nearest the thumb, and
+     it is the one being tapped in the dark. -->
+<div class="stack-bottom">
+  <!-- Update toast. Shown when a new service worker is waiting. -->
+  <div id="update-toast" class="toast" role="status" hidden>
+    <span class="toast-text">New version available.</span>
+    <button id="update-reload" class="btn" type="button">Reload</button>
+  </div>
+
+  <!-- iOS install hint. Shown only on iOS, only when not already installed. -->
+  <div id="ios-banner" class="banner" hidden>
+    <p class="banner-text">Install this app: tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>.</p>
+    <button id="ios-dismiss" class="btn btn-ghost" type="button" aria-label="Dismiss">Dismiss</button>
+  </div>
+
+  <!-- Playback cannot start without a tap (autoplay policy), so a restored mix
+       waits behind this instead of silently doing nothing. -->
+  <div id="resume-banner" class="banner banner-resume" hidden>
+    <p class="banner-text">Your last mix is ready — <span id="resume-count"></span>.</p>
+    <button id="resume-button" class="btn" type="button">Resume mix</button>
+  </div>
+</div>
+
+<script type="module" src="./src/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Source artwork for the icon set. Rasterise with Inkscape, then run the six
+     `convert` commands from init.sh (see scripts/make-icons.sh).
+
+     Lives in scripts/ because deploy.sh excludes that directory wholesale. It
+     excludes only icons/icon-source-1024.png *by name*, and its precache find
+     matches './icons/*' — so an SVG dropped in icons/ would both ship and be
+     precached onto every phone.
+
+     Design constraints: the background is painted opaque here, because the
+     maskable variant composites onto -extent and the apple-touch variant does
+     -alpha remove, and both assume there is no transparency to resolve. Strokes
+     are deliberately heavy (72-80 units on a 1024 canvas, ~1/13 of the width)
+     so the silhouette still reads at 16px in a browser tab. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#0a1128"/>
+
+  <!-- Rain: three falling strokes, middle one longer for a bit of rhythm. -->
+  <g stroke="#2f7bf7" stroke-width="80" stroke-linecap="round" fill="none">
+    <path d="M300 205 L232 455"/>
+    <path d="M512 150 L444 460"/>
+    <path d="M724 205 L656 455"/>
+  </g>
+
+  <!-- The wave: two periods, the "sound" half of the idea. -->
+  <path d="M150 700 Q243 520 336 700 T522 700 T708 700 T894 700"
+        stroke="#2fe6a0" stroke-width="72" stroke-linecap="round" fill="none"/>
+</svg>
